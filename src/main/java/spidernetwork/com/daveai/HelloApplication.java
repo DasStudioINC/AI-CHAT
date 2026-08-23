@@ -25,6 +25,18 @@ public class HelloApplication extends Application {
 
     @Override
     public void init(){
+        OllamaManager manager = new OllamaManager();
+
+        // 1. Check if Ollama server is running
+        if (!manager.isServerRunning()) {
+            System.out.println("Ollama is not running. Attempting to start it...");
+            boolean started = manager.startServerProcess();
+            if (!started) {
+                System.out.println("Warning: Could not auto-launch Ollama. Make sure Ollama is installed.");
+            }
+        }
+
+        manager.ensureModelReady("phi3");
         ollamaClient = new OllamaClient("phi3");
     }
 
