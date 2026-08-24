@@ -5,28 +5,42 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-public class OllamaClient {
-    private static final String OLLAMA_URL = "http://localhost:11434/api/generate";
-    private final HttpClient httpClient;
-    private final String modelName;
+import java.util.List;
 
-    public OllamaClient(String modelName) {
-        this.modelName = modelName;
+public class OllamaClient {
+    private static final String OLLAMA_URL = "http://localhost:11434/api/chat";
+    private final HttpClient httpClient;
+
+    // Removed final modelName from constructor so it can change dynamically
+    public OllamaClient() {
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
     }
 
-    public String generateResponse(String prompt) {
+    // Accept the active modelName directly from your UI dropdown when chat() is called
+    public String chat(String modelName, List<ChatMessage> history) {
         try {
-            String escapedPrompt = prompt.replace("\"", "\\\"").replace("\n", "\\n");
+            // Build JSON messages array manually to avoid extra library dependencies
+            StringBuilder jsonMessages = new StringBuilder("[");
+            for (int i = 0; i < history.size(); i++) {
+                ChatMessage msg = history.get(i);
+                String escapedContent = msg.getContent()
+                        .replace("\\", "\\\\")
+                        .replace("\"", "\\\"")
+                        .replace("\n", "\\n");
+
+                jsonMessages.append(String.format("{\"role\":\"%s\",\"content\":\"%s\"}", msg.getRole(), escapedContent));
+                if (i < history.size() - 1) {
+                    jsonMessages.append(",");
+                }
+            }
+            jsonMessages.append("]");
 
             String jsonBody = String.format(
-                    "{\"model\": \"%s\", \"prompt\": \"%s\", \"stream\": false}",
-                    modelName, escapedPrompt
+                    "{\"model\": \"%s\", \"messages\": %s, \"stream\": false}",
+                    modelName, jsonMessages.toString()
             );
-
-            System.out.println("Sending request to Ollama..."); // DEBUG
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(OLLAMA_URL))
@@ -36,23 +50,20 @@ public class OllamaClient {
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
-            System.out.println("Received status: " + response.statusCode()); // DEBUG
-            System.out.println("Raw body: " + response.body()); // DEBUG
-
             if (response.statusCode() == 200) {
-                return parseResponseText(response.body());
+                return parseChatResponseText(response.body());
             } else {
                 return "Error: Ollama returned status code " + response.statusCode();
             }
 
         } catch (Exception e) {
-            e.printStackTrace(); // Prints full error to IntelliJ console
             return "Error connecting to Ollama: " + e.getMessage();
         }
     }
 
-    private String parseResponseText(String jsonResponse) {
-        String key = "\"response\":\"";
+    private String parseChatResponseText(String jsonResponse) {
+        // Looks for the assistant response structure in /api/chat output
+        String key = "\"content\":\"";
         int startIndex = jsonResponse.indexOf(key);
         if (startIndex == -1) return "Error parsing AI response.";
 
